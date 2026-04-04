@@ -17,7 +17,7 @@ const program = new Command();
 program
   .name('gac')
   .description('Git Auto Commit with AI')
-  .version('1.1.2')
+  .version('1.2.0')
   .option('-k, --key <apiKey>', 'Set OpenRouter API Key')
   .option('-m, --model <model>', 'Set AI Model')
   .option('-s, --style <style>', 'Set Commit Style (conventional, vibe, minimal, detailed)')
@@ -44,7 +44,7 @@ program
       let existingContent = '';
       try {
         existingContent = await fs.readFile(hookPath, 'utf8');
-      } catch (e) {}
+      } catch (e) { }
 
       if (existingContent.includes('gac')) {
         console.log(chalk.yellow('Pre-commit hook already installed.'));
@@ -88,8 +88,8 @@ program
         if (stats.isFile()) {
           promptContent = await fs.readFile(options.prompt, 'utf8');
         }
-      } catch (e) {}
-      
+      } catch (e) { }
+
       config.set('systemPrompt', promptContent);
       console.log(chalk.green('System Prompt updated successfully.'));
       return;
@@ -113,14 +113,7 @@ program
       }
 
       if (!diff || diff.trim() === '') {
-        const { stageAll } = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'stageAll',
-            message: chalk.yellow('No staged changes found. Stage all changes and continue?'),
-            default: true,
-          },
-        ]);
+        const stageAll = await uiUtils.promptStageAll();
 
         if (stageAll) {
           const stageSpinner = ora('Staging all changes...').start();
@@ -128,7 +121,7 @@ program
           stageSpinner.succeed('All changes staged.');
           diff = await gitUtils.getStagedDiff();
         } else {
-          console.log(chalk.yellow('Aborting: No changes staged. Use `git add` to stage changes manually.'));
+          console.log(chalk.yellow('Aborting: No changes staged.'));
           return;
         }
       }
@@ -198,6 +191,33 @@ program
           await gitUtils.commit(formattedMessage);
           console.log(chalk.green('Successfully committed.'));
         }
+
+        // Post-commit: push prompt
+        const branch = await gitUtils.getCurrentBranch();
+        const pushAction = await uiUtils.promptPush(branch);
+        if (pushAction === 'push') {
+          const pushSpinner = ora('Pushing to remote...').start();
+          try {
+            await gitUtils.push();
+            pushSpinner.succeed('Pushed to remote.');
+          } catch (err) {
+            pushSpinner.fail('Push failed');
+            console.error(chalk.red(`Error: ${err.message}`));
+            return;
+          }
+
+          // Post-push: PR prompt (only on feature branches)
+          const remoteUrl = await gitUtils.getRemoteUrl();
+          if (remoteUrl && branch !== 'main' && branch !== 'master') {
+            const shouldPR = await uiUtils.promptCreatePR(remoteUrl, branch);
+            if (shouldPR) {
+              const prUrl = `${remoteUrl}/compare/${branch}?expand=1`;
+              const open = (await import('open')).default;
+              await open(prUrl);
+              console.log(chalk.green(`Opened PR page: ${prUrl}`));
+            }
+          }
+        }
       } else {
         console.log(chalk.yellow('Commit aborted.'));
       }
@@ -205,7 +225,7 @@ program
     } catch (error) {
       console.error(chalk.red(`Error: ${error.message}`));
       if (error.message.includes('API key not found')) {
-        console.log(chalk.cyan('Run `gac --key <YOUR_BASE64_OPENROUTER_KEY>` to set it up.'));
+        console.log(chalk.cyan('Run `gac --key <OPENROUTER_KEY>` to set it up.'));
       }
     }
   });
