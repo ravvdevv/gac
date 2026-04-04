@@ -17,7 +17,7 @@ const program = new Command();
 program
   .name('gac')
   .description('Git Auto Commit with AI')
-  .version('1.1.1')
+  .version('1.1.2')
   .option('-k, --key <apiKey>', 'Set OpenRouter API Key')
   .option('-m, --model <model>', 'Set AI Model')
   .option('-s, --style <style>', 'Set Commit Style (conventional, vibe, minimal, detailed)')

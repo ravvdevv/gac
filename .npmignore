@@ -9,5 +9,4 @@ tsconfig.json
 bun.lock
 bun.lockb
 .gacignore
-README.md
 # Keep bin/, lib/, LICENSE, and README.md
