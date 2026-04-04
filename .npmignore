@@ -1,0 +1,13 @@
+# NPM Ignore
+node_modules/
+.git/
+test-repo/
+test/
+/tmp/
+*.ts
+tsconfig.json
+bun.lock
+bun.lockb
+.gacignore
+README.md
+# Keep bin/, lib/, LICENSE, and README.md
