@@ -1,6 +1,6 @@
 {
   "name": "gac-cli",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Git Auto Commit with AI",
   "type": "module",
   "main": "bin/gac.js",

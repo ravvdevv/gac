@@ -17,7 +17,7 @@ const program = new Command();
 program
   .name('gac')
   .description('Git Auto Commit with AI')
-  .version('1.2.0')
+  .version('1.2.1')
   .option('-k, --key <apiKey>', 'Set OpenRouter API Key')
   .option('-m, --model <model>', 'Set AI Model')
   .option('-s, --style <style>', 'Set Commit Style (conventional, vibe, minimal, detailed)')
@@ -96,6 +96,24 @@ program
     }
 
     try {
+      // Onboarding: first-run setup if no API key is configured
+      if (!config.get('apiKey')) {
+        console.log(chalk.cyan('\n  Welcome to gac - Git Auto Commit with AI\n'));
+        console.log(chalk.gray('  Looks like this is your first time. Let\'s get you set up.\n'));
+        console.log(chalk.gray('  You need an OpenRouter API key. Get one at:'));
+        console.log(chalk.underline('  https://openrouter.ai/keys\n'));
+
+        const apiKey = await uiUtils.promptApiKey();
+        config.set('apiKey', apiKey);
+        console.log(chalk.green('  API Key saved.\n'));
+
+        const model = await uiUtils.promptModel();
+        config.set('model', model);
+        console.log(chalk.green(`  Model set to: ${model}\n`));
+
+        console.log(chalk.cyan('  Setup complete. You\'re ready to go!\n'));
+      }
+
       if (!(await gitUtils.isRepo())) {
         console.error(chalk.red('Error: Not a git repository.'));
         process.exit(1);
