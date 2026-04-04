@@ -17,7 +17,7 @@ const program = new Command();
 program
   .name('gac')
   .description('Git Auto Commit with AI')
-  .version('1.1.0')
+  .version('1.1.1')
   .option('-k, --key <apiKey>', 'Set OpenRouter API Key')
   .option('-m, --model <model>', 'Set AI Model')
   .option('-s, --style <style>', 'Set Commit Style (conventional, vibe, minimal, detailed)')
@@ -113,7 +113,28 @@ program
       }
 
       if (!diff || diff.trim() === '') {
-        console.log(chalk.yellow('No staged changes found. Use `git add` to stage changes.'));
+        const { stageAll } = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'stageAll',
+            message: chalk.yellow('No staged changes found. Stage all changes and continue?'),
+            default: true,
+          },
+        ]);
+
+        if (stageAll) {
+          const stageSpinner = ora('Staging all changes...').start();
+          await gitUtils.addAll();
+          stageSpinner.succeed('All changes staged.');
+          diff = await gitUtils.getStagedDiff();
+        } else {
+          console.log(chalk.yellow('Aborting: No changes staged. Use `git add` to stage changes manually.'));
+          return;
+        }
+      }
+
+      if (!diff || diff.trim() === '') {
+        console.log(chalk.yellow('No changes found to commit.'));
         return;
       }
 
