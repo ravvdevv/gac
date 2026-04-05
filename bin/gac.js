@@ -17,7 +17,7 @@ const program = new Command();
 program
   .name('gac')
   .description('Git Auto Commit with AI')
-  .version('1.2.1')
+  .version('1.3.0')
   .option('-k, --key <apiKey>', 'Set OpenRouter API Key')
   .option('-m, --model <model>', 'Set AI Model')
   .option('-s, --style <style>', 'Set Commit Style (conventional, vibe, minimal, detailed)')
@@ -25,7 +25,8 @@ program
   .option('-a, --amend', 'Amend last commit message with AI')
   .option('-d, --dry-run', 'Generate message without committing')
   .option('-c, --copy', 'Copy generated message to clipboard')
-  .option('--no-verify', 'Skip pre-commit hook (used internally by hook)');
+  .option('--no-verify', 'Skip pre-commit hook (used internally by hook)')
+  .option('--no-sync', 'Skip checking for remote changes');
 
 program
   .command('install-hook')
@@ -117,6 +118,36 @@ program
       if (!(await gitUtils.isRepo())) {
         console.error(chalk.red('Error: Not a git repository.'));
         process.exit(1);
+      }
+
+      // Check for remote changes
+      if (!options.noSync && !options.amend) {
+        const fetchSpinner = ora('Checking for remote updates...').start();
+        try {
+          await gitUtils.fetch();
+          const status = await gitUtils.getStatus();
+          fetchSpinner.stop();
+
+          if (status.behind > 0) {
+            const syncAction = await uiUtils.promptPull(status.behind);
+            if (syncAction === 'pull') {
+              const pullSpinner = ora('Pulling changes...').start();
+              try {
+                await gitUtils.pull();
+                pullSpinner.succeed('Changes pulled successfully.');
+              } catch (err) {
+                pullSpinner.fail('Pull failed. You might have merge conflicts.');
+                console.error(chalk.red(`Error: ${err.message}`));
+                process.exit(1);
+              }
+            } else if (syncAction === 'abort') {
+              console.log(chalk.yellow('Aborted.'));
+              process.exit(0);
+            }
+          }
+        } catch (err) {
+          fetchSpinner.warn('Could not fetch from remote. Continuing...');
+        }
       }
 
       let diff;
