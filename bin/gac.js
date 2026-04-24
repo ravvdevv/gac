@@ -11,22 +11,43 @@ import config from '../lib/config.js';
 import * as gitUtils from '../lib/git.js';
 import * as aiUtils from '../lib/ai.js';
 import * as uiUtils from '../lib/ui.js';
+import { checkForUpdates } from '../lib/update.js';
+
+const pkg = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
 
 const program = new Command();
 
 program
   .name('gac')
   .description('Git Auto Commit with AI')
-  .version('1.3.0')
+  .version(pkg.version)
   .option('-k, --key <apiKey>', 'Set OpenRouter API Key')
   .option('-m, --model <model>', 'Set AI Model')
-  .option('-s, --style <style>', 'Set Commit Style (conventional, vibe, minimal, detailed)')
+  .option('-s, --style <style>', 'Set Commit Style (conventional, vibe, minimal, detailed, verbose)')
   .option('-p, --prompt <prompt>', 'Set Custom System Prompt (text or path to file)')
+  .option('-v, --verbose', 'Show detailed logs and raw AI interactions')
   .option('-a, --amend', 'Amend last commit message with AI')
   .option('-d, --dry-run', 'Generate message without committing')
   .option('-c, --copy', 'Copy generated message to clipboard')
   .option('--no-verify', 'Skip pre-commit hook (used internally by hook)')
   .option('--no-sync', 'Skip checking for remote changes');
+
+program
+  .command('config')
+  .description('Show current configuration')
+  .action(() => {
+    const all = config.store;
+    console.log(chalk.cyan('\nCurrent Configuration:'));
+    for (const [key, value] of Object.entries(all)) {
+      if (key === 'apiKey') {
+        const masked = value ? `${value.substring(0, 8)}...${value.substring(value.length - 4)}` : '(not set)';
+        console.log(`${chalk.bold(key)}: ${chalk.yellow(masked)}`);
+      } else {
+        console.log(`${chalk.bold(key)}: ${chalk.white(value || '(default)')}`);
+      }
+    }
+    console.log();
+  });
 
 program
   .command('install-hook')
@@ -62,6 +83,9 @@ program
 
 program
   .action(async (options) => {
+    // Check for updates on every run
+    await checkForUpdates();
+
     // Handle configuration options
     if (options.key) {
       config.set('apiKey', options.key);
@@ -76,6 +100,12 @@ program
     }
 
     if (options.style) {
+      const validStyles = ['conventional', 'vibe', 'minimal', 'detailed', 'verbose'];
+      if (!validStyles.includes(options.style)) {
+        console.error(chalk.red(`Error: Invalid style '${options.style}'`));
+        console.log(chalk.gray(`Available styles: ${validStyles.join(', ')}`));
+        process.exit(1);
+      }
       config.set('style', options.style);
       console.log(chalk.green(`Default style updated to: ${options.style}`));
       return;
@@ -187,6 +217,7 @@ program
         messageData = await aiUtils.generateMessage(diff, {
           model: options.model,
           style: options.style,
+          verbose: options.verbose,
         });
         spinner.succeed('Message generated!');
       } catch (err) {
@@ -218,6 +249,7 @@ program
             messageData = await aiUtils.generateMessage(diff, {
               model: options.model,
               style: options.style,
+              verbose: options.verbose,
             });
             regenSpinner.succeed('Message regenerated!');
             formattedMessage = uiUtils.formatCommitMessage(messageData);

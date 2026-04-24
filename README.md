@@ -9,7 +9,8 @@ gac is a high-performance command-line interface (CLI) tool designed to automate
 - **Interactive Staging**: Automatically detects unstaged changes and prompts to stage all files when no changes are currently indexed.
 - **Post-Commit Workflows**: Optional prompts for immediate `push` operations and Pull Request (PR) creation on GitHub for non-main branches.
 - **Advanced Diff Filtering**: Automatically excludes lock files (e.g., `bun.lock`, `package-lock.json`) and system noise to optimize AI context and token efficiency.
-- **Configurable Styles**: Supports multiple commit styles, including `conventional`, `detailed`, and `minimal`.
+- **Configurable Styles**: Supports multiple commit styles: `conventional`, `detailed`, `minimal`, `vibe`, and `verbose`.
+- **Auto-Update**: Automatically checks for new versions and prompts to update via `bun`.
 - **Extensibility**: Support for custom system prompts and repository-specific ignore rules via `.gacignore`.
 
 ## Installation
@@ -37,10 +38,16 @@ Initial setup requires an OpenRouter API key:
 gac --key <YOUR_API_KEY>
 ```
 
-To set the preferred AI model (Default: `arcee-ai/trinity-large-preview:free`):
+To set the preferred AI model (Default: `openrouter/free`):
 
 ```bash
 gac --model <MODEL_ID>
+```
+
+To view current configuration:
+
+```bash
+gac config
 ```
 
 ## Usage
@@ -81,7 +88,8 @@ gac --copy
 | :--- | :--- |
 | `--no-sync` | Disable remote update checks (offline mode). |
 | `--no-verify` | Skip Git pre-commit hooks. |
-| `--style <style>` | Override the default commit style. |
+| `--style <style>` | Override the default commit style (`conventional`, `vibe`, `minimal`, `detailed`, `verbose`). |
+| `--verbose`, `-v` | Show detailed logs and raw AI interactions. |
 | `--prompt <text\|path>` | Specify a custom system prompt or prompt file. |
 
 ### Hook Installation
