@@ -84,7 +84,23 @@ program
 program
   .action(async (options) => {
     // Check for updates on every run
-    await checkForUpdates();
+    // Check for updates
+    const latestVersion = await checkForUpdates();
+    if (latestVersion) {
+      const shouldUpdate = await uiUtils.promptUpdate(latestVersion);
+      if (shouldUpdate) {
+        const updateSpinner = ora(`Updating to ${latestVersion}...`).start();
+        try {
+          const { execSync } = await import('child_process');
+          execSync('bun install -g gac-cli', { stdio: 'ignore' });
+          updateSpinner.succeed(`Successfully updated to ${latestVersion}! Please restart gac.`);
+          process.exit(0);
+        } catch (err) {
+          updateSpinner.fail('Update failed.');
+          console.log(chalk.gray(`  Please run ${chalk.cyan('bun install -g gac-cli')} manually.\n`));
+        }
+      }
+    }
 
     // Handle configuration options
     if (options.key) {
