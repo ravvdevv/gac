@@ -1,6 +1,10 @@
 # gac (Git Auto Commit)
 
-gac is a high-performance command-line interface (CLI) tool designed to automate Git workflows using Artificial Intelligence. It analyzes repository changes, generates structured commit messages using OpenRouter-compatible models, and manages remote repository synchronization within a unified execution flow.
+gac is an AI-powered CLI that automates Git commits by generating structured commit messages from repository changes and handling sync workflows.
+
+[![npm version](https://img.shields.io/npm/v/gac-cli.svg)](https://www.npmjs.com/package/gac-cli)
+[![npm downloads](https://img.shields.io/npm/dm/gac-cli.svg)](https://www.npmjs.com/package/gac-cli)
+[![license](https://img.shields.io/npm/l/gac-cli.svg)](./LICENSE)
 
 ## Features
 
