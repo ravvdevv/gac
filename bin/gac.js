@@ -241,7 +241,11 @@ program
         spinner.succeed('Message generated!');
       } catch (err) {
         spinner.fail('Generation failed');
-        console.error(chalk.red(`Error: ${err.message}`));
+        if (err.isFriendly) {
+          console.log(err.message);
+        } else {
+          console.error(chalk.red(`Error: ${err.message}`));
+        }
         process.exit(1);
       }
 
@@ -277,7 +281,11 @@ program
             formattedMessage = uiUtils.formatCommitMessage(messageData);
           } catch (err) {
             regenSpinner.fail('Regeneration failed');
-            console.error(chalk.red(`Error: ${err.message}`));
+            if (err.isFriendly) {
+              console.log(err.message);
+            } else {
+              console.error(chalk.red(`Error: ${err.message}`));
+            }
             process.exit(1);
           }
         } else if (action === 'edit') {
@@ -326,7 +334,11 @@ program
       }
 
     } catch (error) {
-      console.error(chalk.red(`Error: ${error.message}`));
+      if (error.isFriendly) {
+        console.log(error.message);
+      } else {
+        console.error(chalk.red(`Error: ${error.message}`));
+      }
       if (error.message.includes('API key not found')) {
         console.log(chalk.cyan('Run `gac --key <OPENROUTER_KEY>` to set it up.'));
       }
