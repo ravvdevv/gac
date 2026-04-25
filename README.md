@@ -19,6 +19,8 @@ gac is an AI-powered CLI that automates Git commits by generating structured com
 
 ## Installation
 
+It supports multiple package managers. Please use the one that you are familiar with.
+
 ### Via npm
 
 ```bash
