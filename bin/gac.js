@@ -218,6 +218,9 @@ program
           model: options.model,
           style: options.style,
           verbose: options.verbose,
+          onRetry: (attempt, max, delay) => {
+            spinner.text = chalk.yellow(`Attempt ${attempt}/${max} failed. Retrying in ${delay / 1000}s...`);
+          }
         });
         spinner.succeed('Message generated!');
       } catch (err) {
@@ -250,6 +253,9 @@ program
               model: options.model,
               style: options.style,
               verbose: options.verbose,
+              onRetry: (attempt, max, delay) => {
+                regenSpinner.text = chalk.yellow(`Attempt ${attempt}/${max} failed. Retrying in ${delay / 1000}s...`);
+              }
             });
             regenSpinner.succeed('Message regenerated!');
             formattedMessage = uiUtils.formatCommitMessage(messageData);
