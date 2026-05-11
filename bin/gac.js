@@ -59,7 +59,7 @@ program
         process.exit(1);
       }
 
-      const gitPath = path.join(process.cwd(), '.git');
+      const gitPath = await gitUtils.getGitDir();
       const hooksDir = path.join(gitPath, 'hooks');
       const hookPath = path.join(hooksDir, 'pre-commit');
 
