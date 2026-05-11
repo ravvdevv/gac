@@ -1,34 +1,32 @@
 # gac (Git Auto Commit)
 
-gac is an AI-powered CLI that automates Git commits by generating structured commit messages from repository changes and handling sync workflows.
+gac is a CLI tool that uses AI to automatically generate Git commit messages from your changes and help manage basic Git workflows like staging, syncing, and pushing.
 
 [![npm version](https://img.shields.io/npm/v/gac-cli.svg)](https://www.npmjs.com/package/gac-cli)
 [![npm downloads](https://img.shields.io/npm/dm/gac-cli.svg)](https://www.npmjs.com/package/gac-cli)
 [![license](https://img.shields.io/npm/l/gac-cli.svg)](./LICENSE)
 
-## Features
+## What it does
 
-- **AI-Driven Message Generation**: Analyzes staged changes (diffs) to generate structured messages adhering to the Conventional Commits specification.
-- **Remote Synchronization**: Automatically executes `git fetch` to detect remote updates and prompts for a `pull` operation when the local branch is behind, preventing merge conflicts.
-- **Interactive Staging**: Automatically detects unstaged changes and prompts to stage all files when no changes are currently indexed.
-- **Post-Commit Workflows**: Optional prompts for immediate `push` operations and Pull Request (PR) creation on GitHub for non-main branches.
-- **Advanced Diff Filtering**: Automatically excludes lock files (e.g., `bun.lock`, `package-lock.json`) and system noise to optimize AI context and token efficiency.
-- **Configurable Styles**: Supports multiple commit styles: `conventional`, `detailed`, `minimal`, `vibe`, and `verbose`.
-- **Auto-Update**: Automatically checks for new versions and prompts to update via `bun`.
-- **Extensibility**: Support for custom system prompts and repository-specific ignore rules via `.gacignore`.
+- Generates commit messages from your staged changes using AI
+- Follows Conventional Commits style (or other formats you choose)
+- Helps manage Git workflow (stage, pull, push prompts)
+- Filters noise like lock files automatically
+- Supports custom styles like `minimal`, `detailed`, `vibe`, and `verbose`
 
 ## Installation
 
-It supports multiple package managers. Please use the one that you are familiar with.
-
-### Via npm
-
+### npm
 ```bash
 npm install -g gac-cli
 ```
 
-### From Source
+### bun
+```bash
+bun install -g gac-cli
+```
 
+### From source
 ```bash
 git clone https://github.com/ravvdevv/gac.git
 cd gac
@@ -36,89 +34,68 @@ bun install
 bun link
 ```
 
-## Configuration
+## Setup
 
-Initial setup requires an OpenRouter API key:
-
+Set your API key:
 ```bash
 gac --key <YOUR_API_KEY>
 ```
 
-To set the preferred AI model (Default: `openrouter/free`):
-
+(Optional) Set model:
 ```bash
 gac --model <MODEL_ID>
 ```
 
-To view current configuration:
-
+Check config:
 ```bash
 gac config
 ```
 
 ## Usage
 
-### Basic Execution
-
-Run `gac` in any Git repository to initiate the automated commit workflow:
-
+Run inside a Git repo:
 ```bash
 gac
 ```
 
-### Amending Commits
+### Useful commands
 
-To regenerate the commit message for the most recent commit:
-
-```bash
-gac --amend
-```
-
-### Dry Run and Clipboard Integration
-
-To generate a message without executing a commit:
-
+- Generate commit only:
 ```bash
 gac --dry-run
 ```
 
-To copy the generated message directly to the system clipboard:
-
+- Copy commit message:
 ```bash
 gac --copy
 ```
 
-### Command Options
+- Amend last commit:
+```bash
+gac --amend
+```
 
-| Option | Description |
-| :--- | :--- |
-| `--no-sync` | Disable remote update checks (offline mode). |
-| `--no-verify` | Skip Git pre-commit hooks. |
-| `--style <style>` | Override the default commit style (`conventional`, `vibe`, `minimal`, `detailed`, `verbose`). |
-| `--verbose`, `-v` | Show detailed logs and raw AI interactions. |
-| `--prompt <text\|path>` | Specify a custom system prompt or prompt file. |
-
-### Hook Installation
-
-To install a pre-commit hook that invokes `gac` automatically:
-
+- Install Git hook:
 ```bash
 gac install-hook
 ```
 
-## Project Configuration
+## Options
 
-### .gacignore
+- `--no-sync` → skip remote checks
+- `--no-verify` → skip Git hooks
+- `--style <style>` → change commit style
+- `--verbose` → show debug logs
+- `--prompt <text|file>` → custom AI prompt
 
-The `.gacignore` file in the repository root allows for excluding specific files from AI analysis using standard glob patterns.
+## Ignore files
 
-### Model Selection
-
-`gac` supports all OpenRouter-compatible models. Use `gac --model custom` to specify a custom model ID.
+Use `.gacignore` to exclude files from AI analysis.
 
 ## License
 
-This project is licensed under the Raven License. Refer to the [LICENSE](./LICENSE) file for complete terms.
+Raven License. See LICENSE file.
 
 ---
+
 Maintained by Raven
