@@ -29,6 +29,8 @@ program
   .option('-a, --amend', 'Amend last commit message with AI')
   .option('-d, --dry-run', 'Generate message without committing')
   .option('-c, --copy', 'Copy generated message to clipboard')
+  .option('-y, --yes', 'Bypass all prompts (headless mode)')
+  .option('--json', 'Output results as JSON')
   .option('--no-verify', 'Skip pre-commit hook (used internally by hook)')
   .option('--no-sync', 'Skip checking for remote changes');
 
@@ -144,7 +146,7 @@ program
 
     try {
       // Onboarding: first-run setup if no API key is configured
-      if (!config.get('apiKey')) {
+      if (!config.get('apiKey') && !options.yes) {
         console.log(chalk.cyan('\n  Welcome to gac - Git Auto Commit with AI\n'));
         console.log(chalk.gray('  Looks like this is your first time. Let\'s get you set up.\n'));
         console.log(chalk.gray('  You need an OpenRouter API key. Get one at:'));
@@ -158,6 +160,14 @@ program
         config.set('model', model);
         console.log(chalk.green(`  Model set to: ${model}\n`));
 
+        // Optional AI Discovery Onboarding
+        const shouldInitAI = await uiUtils.promptAIDiscovery();
+        if (shouldInitAI) {
+          const repoRoot = await gitUtils.getRepoRoot();
+          await uiUtils.createAIDiscoveryFiles(repoRoot);
+          console.log(chalk.green('  AI Discovery files created.\n'));
+        }
+
         console.log(chalk.cyan('  Setup complete. You\'re ready to go!\n'));
       }
 
@@ -168,31 +178,30 @@ program
 
       // Check for remote changes
       if (!options.noSync && !options.amend) {
-        const fetchSpinner = ora('Checking for remote updates...').start();
+        const fetchSpinner = options.json ? null : ora('Checking for remote updates...').start();
         try {
           await gitUtils.fetch();
           const status = await gitUtils.getStatus();
-          fetchSpinner.stop();
+          if (fetchSpinner) fetchSpinner.stop();
 
           if (status.behind > 0) {
-            const syncAction = await uiUtils.promptPull(status.behind);
+            const syncAction = await uiUtils.promptPull(status.behind, options);
             if (syncAction === 'pull') {
-              const pullSpinner = ora('Pulling changes...').start();
+              const pullSpinner = options.json ? null : ora('Pulling changes...').start();
               try {
                 await gitUtils.pull();
-                pullSpinner.succeed('Changes pulled successfully.');
+                if (pullSpinner) pullSpinner.succeed('Changes pulled successfully.');
               } catch (err) {
-                pullSpinner.fail('Pull failed. You might have merge conflicts.');
-                console.error(chalk.red(`Error: ${err.message}`));
-                process.exit(1);
+                if (pullSpinner) pullSpinner.fail('Pull failed. You might have merge conflicts.');
+                throw err;
               }
             } else if (syncAction === 'abort') {
-              console.log(chalk.yellow('Aborted.'));
+              if (!options.json) console.log(chalk.yellow('Aborted.'));
               process.exit(0);
             }
           }
         } catch (err) {
-          fetchSpinner.warn('Could not fetch from remote. Continuing...');
+          if (fetchSpinner) fetchSpinner.warn('Could not fetch from remote. Continuing...');
         }
       }
 
@@ -208,25 +217,26 @@ program
       }
 
       if (!diff || diff.trim() === '') {
-        const stageAll = await uiUtils.promptStageAll();
+        const stageAll = await uiUtils.promptStageAll(options);
 
         if (stageAll) {
-          const stageSpinner = ora('Staging all changes...').start();
+          const stageSpinner = options.json ? null : ora('Staging all changes...').start();
           await gitUtils.addAll();
-          stageSpinner.succeed('All changes staged.');
+          if (stageSpinner) stageSpinner.succeed('All changes staged.');
           diff = await gitUtils.getStagedDiff();
         } else {
-          console.log(chalk.yellow('Aborting: No changes staged.'));
+          if (!options.json) console.log(chalk.yellow('Aborting: No changes staged.'));
           return;
         }
       }
 
       if (!diff || diff.trim() === '') {
-        console.log(chalk.yellow('No changes found to commit.'));
+        if (!options.json) console.log(chalk.yellow('No changes found to commit.'));
+        if (options.json) console.log(JSON.stringify({ status: 'success', message: 'No changes found' }));
         return;
       }
 
-      const spinner = ora('Analyzing changes and generating message...').start();
+      const spinner = options.json ? null : ora('Analyzing changes and generating message...').start();
 
       let messageData;
       try {
@@ -235,58 +245,52 @@ program
           style: options.style,
           verbose: options.verbose,
           onRetry: (attempt, max, delay) => {
-            spinner.text = chalk.yellow(`Attempt ${attempt}/${max} failed. Retrying in ${delay / 1000}s...`);
+            if (spinner) spinner.text = chalk.yellow(`Attempt ${attempt}/${max} failed. Retrying in ${delay / 1000}s...`);
           }
         });
-        spinner.succeed('Message generated!');
+        if (spinner) spinner.succeed('Message generated!');
       } catch (err) {
-        spinner.fail('Generation failed');
-        if (err.isFriendly) {
-          console.log(err.message);
-        } else {
-          console.error(chalk.red(`Error: ${err.message}`));
-        }
-        process.exit(1);
+        if (spinner) spinner.fail('Generation failed');
+        throw err;
       }
 
       let formattedMessage = uiUtils.formatCommitMessage(messageData);
 
       if (options.copy) {
         await clipboard.write(formattedMessage);
-        console.log(chalk.gray('(Copied to clipboard)'));
+        if (!options.json) console.log(chalk.gray('(Copied to clipboard)'));
       }
 
       if (options.dryRun) {
-        console.log(chalk.cyan('\nGenerated Commit Message:'));
-        console.log(chalk.bold.white(formattedMessage));
+        if (options.json) {
+          console.log(JSON.stringify({ status: 'success', message: formattedMessage, data: messageData }));
+        } else {
+          console.log(chalk.cyan('\nGenerated Commit Message:'));
+          console.log(chalk.bold.white(formattedMessage));
+        }
         return;
       }
 
       let action = 'regenerate';
       while (action === 'regenerate') {
-        action = await uiUtils.promptCommitAction(formattedMessage);
+        action = await uiUtils.promptCommitAction(formattedMessage, options);
 
         if (action === 'regenerate') {
-          const regenSpinner = ora('Regenerating message...').start();
+          const regenSpinner = options.json ? null : ora('Regenerating message...').start();
           try {
             messageData = await aiUtils.generateMessage(diff, {
               model: options.model,
               style: options.style,
               verbose: options.verbose,
               onRetry: (attempt, max, delay) => {
-                regenSpinner.text = chalk.yellow(`Attempt ${attempt}/${max} failed. Retrying in ${delay / 1000}s...`);
+                if (regenSpinner) regenSpinner.text = chalk.yellow(`Attempt ${attempt}/${max} failed. Retrying in ${delay / 1000}s...`);
               }
             });
-            regenSpinner.succeed('Message regenerated!');
+            if (regenSpinner) regenSpinner.succeed('Message regenerated!');
             formattedMessage = uiUtils.formatCommitMessage(messageData);
           } catch (err) {
-            regenSpinner.fail('Regeneration failed');
-            if (err.isFriendly) {
-              console.log(err.message);
-            } else {
-              console.error(chalk.red(`Error: ${err.message}`));
-            }
-            process.exit(1);
+            if (regenSpinner) regenSpinner.fail('Regeneration failed');
+            throw err;
           }
         } else if (action === 'edit') {
           formattedMessage = await uiUtils.promptEditMessage(formattedMessage);
@@ -297,51 +301,61 @@ program
       if (action === 'confirm') {
         if (options.amend) {
           await gitUtils.amendCommit(formattedMessage);
-          console.log(chalk.green('Successfully amended commit.'));
+          if (!options.json) console.log(chalk.green('Successfully amended commit.'));
         } else {
           await gitUtils.commit(formattedMessage);
-          console.log(chalk.green('Successfully committed.'));
+          if (!options.json) console.log(chalk.green('Successfully committed.'));
         }
 
         // Post-commit: push prompt
         const branch = await gitUtils.getCurrentBranch();
-        const pushAction = await uiUtils.promptPush(branch);
+        const pushAction = await uiUtils.promptPush(branch, options);
         if (pushAction === 'push') {
-          const pushSpinner = ora('Pushing to remote...').start();
+          const pushSpinner = options.json ? null : ora('Pushing to remote...').start();
           try {
             await gitUtils.push();
-            pushSpinner.succeed('Pushed to remote.');
+            if (pushSpinner) pushSpinner.succeed('Pushed to remote.');
           } catch (err) {
-            pushSpinner.fail('Push failed');
-            console.error(chalk.red(`Error: ${err.message}`));
-            return;
+            if (pushSpinner) pushSpinner.fail('Push failed');
+            throw err;
           }
 
           // Post-push: PR prompt (only on feature branches)
           const remoteUrl = await gitUtils.getRemoteUrl();
           if (remoteUrl && branch !== 'main' && branch !== 'master') {
-            const shouldPR = await uiUtils.promptCreatePR(remoteUrl, branch);
+            const shouldPR = await uiUtils.promptCreatePR(remoteUrl, branch, options);
             if (shouldPR) {
               const prUrl = `${remoteUrl}/compare/${branch}?expand=1`;
               const open = (await import('open')).default;
               await open(prUrl);
-              console.log(chalk.green(`Opened PR page: ${prUrl}`));
+              if (!options.json) console.log(chalk.green(`Opened PR page: ${prUrl}`));
             }
           }
         }
+        if (options.json) console.log(JSON.stringify({ status: 'success', message: 'Committed successfully', commitMessage: formattedMessage }));
       } else {
-        console.log(chalk.yellow('Commit aborted.'));
+        if (!options.json) console.log(chalk.yellow('Commit aborted.'));
+        if (options.json) console.log(JSON.stringify({ status: 'aborted' }));
       }
 
     } catch (error) {
-      if (error.isFriendly) {
-        console.log(error.message);
+      if (options.json) {
+        console.error(JSON.stringify({
+          status: 'error',
+          message: error.message,
+          isFriendly: error.isFriendly || false
+        }));
       } else {
-        console.error(chalk.red(`Error: ${error.message}`));
+        if (error.isFriendly) {
+          console.log(error.message);
+        } else {
+          console.error(chalk.red(`Error: ${error.message}`));
+        }
+        if (error.message.includes('API key not found')) {
+          console.log(chalk.cyan('Run `gac --key <OPENROUTER_KEY>` to set it up.'));
+        }
       }
-      if (error.message.includes('API key not found')) {
-        console.log(chalk.cyan('Run `gac --key <OPENROUTER_KEY>` to set it up.'));
-      }
+      process.exit(1);
     }
   });
 
