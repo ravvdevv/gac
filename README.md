@@ -82,11 +82,21 @@ gac install-hook
 
 ## Options
 
-- `--no-sync` → skip remote checks
-- `--no-verify` → skip Git hooks
-- `--style <style>` → change commit style
-- `--verbose` → show debug logs
-- `--prompt <text|file>` → custom AI prompt
+- `--key <apiKey>` → Set OpenRouter API Key
+- `--model <model>` → Set AI Model
+- `--style <style>` → Set Commit Style (conventional, vibe, minim   al, detailed, verbose)
+- `--prompt <prompt>` → Set Custom System Prompt (text or path to file)
+- `--verbose`, `-v` → Show detailed logs and raw AI interactions
+- `--amend` → Amend last commit message with AI
+- `--dry-run` → Generate message without committing
+- `--copy` → Copy generated message to clipboard
+- `--yes`, `-y` → Bypass all prompts (Headless mode for AI agents). 
+- `--json` → Output results as machine-readable JSON. 
+- `--no-sync` → Disable remote update checks (offline mode). 
+- `--no-verify` → Skip Git pre-commit hooks. 
+- `--style <style>` → Override the default commit style (`conventional`, `vibe`, `minimal`, `detailed`, `verbose`). 
+- `--verbose`, `-v` → Show detailed logs and raw AI interactions. 
+- `--prompt <text\|path>` → Specify a custom system prompt or prompt file. 
 
 ## Ignore files
 
