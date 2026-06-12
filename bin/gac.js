@@ -24,6 +24,7 @@ program
   .option('-k, --key <apiKey>', 'Set OpenRouter API Key')
   .option('-m, --model <model>', 'Set AI Model')
   .option('-s, --style <style>', 'Set Commit Style (conventional, vibe, minimal, detailed, verbose)')
+  .option('--scope <scope>', 'Set commit scope (e.g., "auth", "api", "ui"). Overrides AI-suggested scope.')
   .option('-p, --prompt <prompt>', 'Set Custom System Prompt (text or path to file)')
   .option('-v, --verbose', 'Show detailed logs and raw AI interactions')
   .option('-a, --amend', 'Amend last commit message with AI')
@@ -32,7 +33,8 @@ program
   .option('-y, --yes', 'Bypass all prompts (headless mode)')
   .option('--json', 'Output results as JSON')
   .option('--no-verify', 'Skip pre-commit hook (used internally by hook)')
-  .option('--no-sync', 'Skip checking for remote changes');
+  .option('--no-sync', 'Skip checking for remote changes')
+  .option('--no-emoji', 'Strip emojis from generated commit messages');
 
 program
   .command('config')
@@ -84,22 +86,55 @@ program
   });
 
 program
+  .command('validate')
+  .description('Validate a commit message against Conventional Commits spec')
+  .argument('<message>', 'Commit message to validate')
+  .action((message) => {
+    const conventionalCommitRegex = /^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\([a-z0-9-]+\))?!?: .+/;
+    const subjectLine = message.split('\n')[0];
+
+    if (!conventionalCommitRegex.test(subjectLine)) {
+      console.log(chalk.red('✗ Does not follow Conventional Commits format'));
+      console.log(chalk.gray('  Expected: <type>(<scope>): <description>'));
+      console.log(chalk.gray('  Types: feat, fix, docs, style, refactor, perf, test, chore, ci, build, revert'));
+      process.exit(1);
+    }
+
+    if (subjectLine.length > 72) {
+      console.log(chalk.yellow(`✓ Valid format, but subject is ${subjectLine.length} chars (recommended ≤72)`));
+    } else {
+      console.log(chalk.green('✓ Valid Conventional Commit message'));
+    }
+
+    if (subjectLine.endsWith('.')) {
+      console.log(chalk.yellow('  ⚠ Subject should not end with a period'));
+    }
+
+    if (subjectLine !== subjectLine.toLowerCase() && !subjectLine.includes(': ')) {
+      // skip — the type prefix is lowercase by convention
+    } else if (subjectLine.includes(': ') && subjectLine.split(': ')[1] !== subjectLine.split(': ')[1].toLowerCase()) {
+      console.log(chalk.yellow('  ⚠ Subject description after ": " should be lowercase'));
+    }
+  });
+
+program
   .action(async (options) => {
-    // Check for updates on every run
-    // Check for updates
-    const latestVersion = await checkForUpdates();
-    if (latestVersion) {
-      const shouldUpdate = await uiUtils.promptUpdate(latestVersion);
-      if (shouldUpdate) {
-        const updateSpinner = ora(`Updating to ${latestVersion}...`).start();
-        try {
-          const { execSync } = await import('child_process');
-          execSync('bun install -g gac-cli', { stdio: 'ignore' });
-          updateSpinner.succeed(`Successfully updated to ${latestVersion}! Please restart gac.`);
-          process.exit(0);
-        } catch (err) {
-          updateSpinner.fail('Update failed.');
-          console.log(chalk.gray(`  Please run ${chalk.cyan('bun install -g gac-cli')} manually.\n`));
+    // Check for updates (skip in headless mode)
+    if (!options.yes) {
+      const latestVersion = await checkForUpdates();
+      if (latestVersion) {
+        const shouldUpdate = await uiUtils.promptUpdate(latestVersion);
+        if (shouldUpdate) {
+          const updateSpinner = ora(`Updating to ${latestVersion}...`).start();
+          try {
+            const { execSync } = await import('child_process');
+            execSync('bun install -g gac-cli', { stdio: 'ignore' });
+            updateSpinner.succeed(`Successfully updated to ${latestVersion}! Please restart gac.`);
+            process.exit(0);
+          } catch (err) {
+            updateSpinner.fail('Update failed.');
+            console.log(chalk.gray(`  Please run ${chalk.cyan('bun install -g gac-cli')} manually.\n`));
+          }
         }
       }
     }
@@ -131,7 +166,6 @@ program
 
     if (options.prompt) {
       let promptContent = options.prompt;
-      // Check if it's a file path
       try {
         const stats = await fs.stat(options.prompt);
         if (stats.isFile()) {
@@ -144,8 +178,13 @@ program
       return;
     }
 
+    if (options.scope) {
+      // Scope is per-commit config, not persisted — handled via options
+      console.log(chalk.gray(`Scope set to: ${options.scope}`));
+    }
+
     try {
-      // Onboarding: first-run setup if no API key is configured
+      // Onboarding
       if (!config.get('apiKey') && !options.yes) {
         console.log(chalk.cyan('\n  Welcome to gac - Git Auto Commit with AI\n'));
         console.log(chalk.gray('  Looks like this is your first time. Let\'s get you set up.\n'));
@@ -160,7 +199,6 @@ program
         config.set('model', model);
         console.log(chalk.green(`  Model set to: ${model}\n`));
 
-        // Optional AI Discovery Onboarding
         const shouldInitAI = await uiUtils.promptAIDiscovery();
         if (shouldInitAI) {
           const repoRoot = await gitUtils.getRepoRoot();
@@ -244,6 +282,8 @@ program
           model: options.model,
           style: options.style,
           verbose: options.verbose,
+          scope: options.scope,
+          noEmoji: options.noEmoji,
           onRetry: (attempt, max, delay) => {
             if (spinner) spinner.text = chalk.yellow(`Attempt ${attempt}/${max} failed. Retrying in ${delay / 1000}s...`);
           }
@@ -254,7 +294,7 @@ program
         throw err;
       }
 
-      let formattedMessage = uiUtils.formatCommitMessage(messageData);
+      let formattedMessage = uiUtils.formatCommitMessage(messageData, { noEmoji: options.noEmoji });
 
       if (options.copy) {
         await clipboard.write(formattedMessage);
@@ -265,8 +305,7 @@ program
         if (options.json) {
           console.log(JSON.stringify({ status: 'success', message: formattedMessage, data: messageData }));
         } else {
-          console.log(chalk.cyan('\nGenerated Commit Message:'));
-          console.log(chalk.bold.white(formattedMessage));
+          uiUtils.printCommitPreview(formattedMessage, messageData);
         }
         return;
       }
@@ -282,12 +321,14 @@ program
               model: options.model,
               style: options.style,
               verbose: options.verbose,
+              scope: options.scope,
+              noEmoji: options.noEmoji,
               onRetry: (attempt, max, delay) => {
                 if (regenSpinner) regenSpinner.text = chalk.yellow(`Attempt ${attempt}/${max} failed. Retrying in ${delay / 1000}s...`);
               }
             });
             if (regenSpinner) regenSpinner.succeed('Message regenerated!');
-            formattedMessage = uiUtils.formatCommitMessage(messageData);
+            formattedMessage = uiUtils.formatCommitMessage(messageData, { noEmoji: options.noEmoji });
           } catch (err) {
             if (regenSpinner) regenSpinner.fail('Regeneration failed');
             throw err;
