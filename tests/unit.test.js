@@ -106,14 +106,19 @@ describe('formatCommitMessage', () => {
     assert.strictEqual(result, 'feat: add login endpoint');
   });
 
-  it('defaults type to feat when missing', () => {
+  it('defaults type to chore when missing', () => {
     const data = { message: 'update deps' };
-    assert.strictEqual(formatCommitMessage(data), 'feat: update deps');
+    assert.strictEqual(formatCommitMessage(data), 'chore: update deps');
   });
 
   it('defaults message to "unknown change" when missing', () => {
     const data = { type: 'fix' };
     assert.strictEqual(formatCommitMessage(data), 'fix: unknown change');
+  });
+
+  it('trims whitespace from message', () => {
+    const data = { type: 'feat', message: '  add login  ' };
+    assert.strictEqual(formatCommitMessage(data), 'feat: add login');
   });
 });
 

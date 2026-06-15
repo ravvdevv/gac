@@ -112,6 +112,7 @@ gac validate "feat(auth): add login endpoint"
 | `--no-sync` | Disable remote update checks (offline mode) |
 | `--no-verify` | Skip Git pre-commit hooks |
 | `--no-emoji` | Strip emojis from generated messages |
+| `--fallback-model <model>` | Set fallback AI model (used when primary model fails) |
 
 ## Commit Styles
 

@@ -6,6 +6,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import ora from 'ora';
 import clipboard from 'clipboardy';
+import inquirer from 'inquirer';
 
 import config from '../lib/config.js';
 import * as gitUtils from '../lib/git.js';
@@ -34,7 +35,8 @@ program
   .option('--json', 'Output results as JSON')
   .option('--no-verify', 'Skip pre-commit hook (used internally by hook)')
   .option('--no-sync', 'Skip checking for remote changes')
-  .option('--no-emoji', 'Strip emojis from generated commit messages');
+  .option('--no-emoji', 'Strip emojis from generated commit messages')
+  .option('--fallback-model <model>', 'Set fallback AI model (used when primary model fails)');
 
 program
   .command('config')
@@ -118,6 +120,46 @@ program
   });
 
 program
+  .command('undo')
+  .description('Undo the last commit, restoring changes to staging')
+  .action(async () => {
+    try {
+      if (!(await gitUtils.isRepo())) {
+        console.error(chalk.red('Error: Not a git repository.'));
+        process.exit(1);
+      }
+
+      // Check if there's a commit to undo
+      const log = await gitUtils.getLastCommitInfo();
+      if (!log || !log.message) {
+        console.log(chalk.yellow('No commits to undo.'));
+        process.exit(0);
+      }
+
+      console.log(chalk.gray(`  Last commit: ${log.message.split('\n')[0]}`));
+
+      const { confirm } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'confirm',
+          message: 'Undo this commit? Changes will be restored to staging.',
+          default: true,
+        },
+      ]);
+
+      if (confirm) {
+        await gitUtils.undoLastCommit();
+        console.log(chalk.green('✓ Commit undone. Changes restored to staging.'));
+      } else {
+        console.log(chalk.yellow('Aborted.'));
+      }
+    } catch (error) {
+      console.error(chalk.red(`Error: ${error.message}`));
+      process.exit(1);
+    }
+  });
+
+program
   .action(async (options) => {
     // Check for updates (skip in headless mode)
     if (!options.yes) {
@@ -181,6 +223,12 @@ program
     if (options.scope) {
       // Scope is per-commit config, not persisted — handled via options
       console.log(chalk.gray(`Scope set to: ${options.scope}`));
+    }
+
+    if (options.fallbackModel) {
+      config.set('fallbackModel', options.fallbackModel);
+      console.log(chalk.green(`Fallback model updated to: ${options.fallbackModel}`));
+      return;
     }
 
     try {
