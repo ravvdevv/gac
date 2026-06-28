@@ -210,12 +210,19 @@ program.action(async (options) => {
     if (latestVersion) {
       const shouldUpdate = await uiUtils.promptUpdate(latestVersion);
       if (shouldUpdate) {
-        const spinner = ora('Updating to ' + latestVersion + '...').start();
+        const spinner = ora('Updating gac to ' + latestVersion + '...').start();
         try {
           const { execSync } = await import('child_process');
-          execSync('npm install -g gac-cli', { stdio: 'ignore' });
-          spinner.succeed('Updated to ' + latestVersion + '! Please restart gac.');
-          process.exit(0);
+          execSync('npm install -g gac-cli@' + latestVersion, { stdio: options.verbose ? 'inherit' : 'pipe' });
+          // Verify the installed version matches
+          const updatedPkg = await fs.readFile(new URL('../package.json', import.meta.url), 'utf8').then(JSON.parse);
+          if (updatedPkg.version !== latestVersion) {
+            spinner.warn('Update command ran but version is still ' + updatedPkg.version + '. Try: npm install -g gac-cli');
+            // Don't exit — let the user continue with current version
+          } else {
+            spinner.succeed('Updated to ' + latestVersion + '! Restart gac for changes to take full effect');
+            process.exit(0);
+          }
         } catch (err) {
           spinner.fail('Update failed. Run: npm install -g gac-cli');
         }
