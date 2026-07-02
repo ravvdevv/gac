@@ -247,37 +247,42 @@ program.action(async (options) => {
     process.exit(1);
   }
 
-  // ─── Handle stage ────────────────────────────────────────────────────
-  let status = await gitUtils.getStatus();
-  if (status.staged.length === 0) {
-    const stageAll = await uiUtils.promptStageAll(options);
-    if (stageAll) {
-      const spinner = ora('Staging all changes...').start();
-      await gitUtils.addAll();
-      status = await gitUtils.getStatus();
-      if (status.staged.length === 0) {
-        spinner.fail('Nothing to commit after staging.');
-        process.exit(0);
-      }
-      spinner.succeed('All changes staged.');
-    } else {
-      console.log(chalk.yellow('No changes to commit.'));
-      process.exit(0);
+  // ─── Amend mode (separate flow) ──────────────────────────────────────
+  if (options.amend) {
+    const spinner = ora('Analyzing last commit...').start();
+    const info = await gitUtils.getLastCommitInfo();
+    spinner.text = 'Generating amended message...';
+    try {
+      const data = await aiUtils.generateMessage(info.diff, {
+        model: options.model || config.get('model'),
+        style: options.style || config.get('style'),
+        verbose: options.verbose,
+      });
+      const formatted = uiUtils.formatCommitMessage(data, { noEmoji: options.emoji === false });
+      spinner.stop();
+      console.log(chalk.bold('\nAmended Message:\n') + formatted + '\n');
+      await gitUtils.amendCommit(formatted);
+      console.log(chalk.green('Last commit amended.'));
+    } catch (err) {
+      spinner.fail(err.message);
+      process.exit(1);
     }
+    return;
   }
 
   // ─── Sync: fetch and pull if behind (unless --no-sync) ───────────────
   if (options.sync !== false) {
+    let syncStatus;
     try {
       await gitUtils.fetch();
-      status = await gitUtils.getStatus();
-      if (status.behind > 0) {
-        const action = await uiUtils.promptPull(status.behind, options);
-        if (action === 'abort') process.exit(0);
-        if (action === 'pull') {
-          const spinner = ora('Pulling remote changes...').start();
+      syncStatus = await gitUtils.getStatus();
+      if (syncStatus.behind > 0) {
+        const syncAction = await uiUtils.promptPull(syncStatus.behind, options);
+        if (syncAction === 'abort') process.exit(0);
+        if (syncAction === 'pull') {
+          const syncSpinner = ora('Pulling remote changes...').start();
           await gitUtils.pull();
-          spinner.succeed('Pulled latest changes.');
+          syncSpinner.succeed('Pulled latest changes.');
         }
       }
     } catch (e) {
@@ -304,130 +309,156 @@ program.action(async (options) => {
     }
   }
 
-  // ─── Amend mode ──────────────────────────────────────────────────────
-  if (options.amend) {
-    const spinner = ora('Analyzing last commit...').start();
-    const info = await gitUtils.getLastCommitInfo();
-    spinner.text = 'Generating amended message...';
-    try {
-      const data = await aiUtils.generateMessage(info.diff, {
-        model: options.model || config.get('model'),
-        style: options.style || config.get('style'),
-        verbose: options.verbose,
-      });
-      const formatted = uiUtils.formatCommitMessage(data, { noEmoji: options.emoji === false });
-      spinner.stop();
-      console.log(chalk.bold('\nAmended Message:\n') + formatted + '\n');
-      await gitUtils.amendCommit(formatted);
-      console.log(chalk.green('Last commit amended.'));
-    } catch (err) {
-      spinner.fail(err.message);
-      process.exit(1);
-    }
-    return;
-  }
+  // ─── Interactive file selection + commit loop ───────────────────────
+  let selectedFiles = null;
+  let stagedCount = 0;
+  let diffStats = { additions: 0, deletions: 0 };
+  let originalStaged = [];
 
-  // ─── Generate commit message from staged diff ────────────────────────
-  const spinner = ora('Analyzing staged changes...').start();
-  let diff;
-  try {
-    diff = await gitUtils.getStagedDiff();
-    if (!diff) {
-      spinner.fail('No staged diff could be read.');
-      process.exit(1);
-    }
-    spinner.text = 'Generating commit message with AI...';
-    const data = await aiUtils.generateMessage(diff, {
-      model: options.model || config.get('model'),
-      style: options.style || config.get('style'),
-      scope: options.scope || undefined,
-      verbose: options.verbose,
-    });
-    spinner.stop();
+  while (true) {
+    // ─── File selection ────────────────────────────────────────────────
+    if (!selectedFiles) {
+      const allChanged = await gitUtils.getAllChangedFiles();
+      if (allChanged.length === 0) {
+        console.log(chalk.yellow('No changes to commit.'));
+        process.exit(0);
+      }
 
-    const formatted = uiUtils.formatCommitMessage(data, { noEmoji: options.emoji === false });
-
-    // ─── Output handling ────────────────────────────────────────────────
-    if (options.json) {
-      console.log(JSON.stringify({ commitMessage: formatted, data }, null, 2));
-      return;
-    }
-
-    // Print preview
-    uiUtils.printCommitPreview(formatted, data);
-
-    if (options.copy) {
-      await clipboard.write(formatted);
-      console.log(chalk.green('  ✓ Copied to clipboard'));
-    }
-
-    if (options.dryRun) {
-      console.log(chalk.gray('  (dry-run — not committed)'));
-      return;
-    }
-
-    // ─── Prompt loop: confirm/edit/regenerate/abort ─────────────────────
-    let finalMessage = formatted;
-    let action = options.yes ? 'confirm' : '';
-
-    while (action !== 'confirm' && action !== 'abort') {
-      if (!action) action = await uiUtils.promptCommitAction(finalMessage, options);
-      if (action === 'edit') {
-        finalMessage = await uiUtils.promptEditMessage(finalMessage);
-        action = 'confirm';
-      } else if (action === 'regenerate') {
-        const spinner2 = ora('Regenerating message...').start();
-        try {
-          diff = await gitUtils.getStagedDiff();
-          const data2 = await aiUtils.generateMessage(diff, {
-            model: options.model || config.get('model'),
-            style: options.style || config.get('style'),
-            scope: options.scope || undefined,
-            verbose: options.verbose,
-          });
-          finalMessage = uiUtils.formatCommitMessage(data2, { noEmoji: options.emoji === false });
-          spinner2.stop();
-          uiUtils.printCommitPreview(finalMessage, data2);
-        } catch (err) {
-          spinner2.fail(err.message);
-        }
-        action = '';
-      } else if (action === 'abort') {
+      selectedFiles = await uiUtils.promptFileSelection(allChanged, options);
+      if (selectedFiles.length === 0) {
         console.log(chalk.yellow('Commit aborted.'));
         process.exit(0);
       }
+
+      // Stage only what user selected — clean slate
+      // Save original staged state before we touch anything
+      const preStatus = await gitUtils.getStatus();
+      originalStaged = preStatus.staged || [];
+      const sp = ora('Preparing files...').start();
+      await gitUtils.unstageAll();
+      await gitUtils.stageFiles(selectedFiles);
+      const stageStatus = await gitUtils.getStatus();
+      stagedCount = stageStatus.staged.length;
+      if (stagedCount === 0) {
+        sp.fail('Nothing to commit.');
+        process.exit(0);
+      }
+      diffStats = await gitUtils.getStagedStats();
+      const statsStr = `+${diffStats.additions}  -${diffStats.deletions}`;
+      sp.succeed(`${stagedCount} file(s) staged  ·  ${statsStr}`);
     }
 
-    // ─── Commit ─────────────────────────────────────────────────────────
-    const commitSpinner = ora('Committing...').start();
+    // ─── Generate commit message from staged diff ──────────────────────
+    const gs = ora('Analyzing staged changes...').start();
     try {
-      const output = await gitUtils.commit(finalMessage);
-      commitSpinner.succeed('Committed');
-      if (options.verbose) console.log(chalk.gray(output));
+      const diff = await gitUtils.getStagedDiff();
+      if (!diff) {
+        gs.fail('No staged diff could be read.');
+        process.exit(1);
+      }
+      gs.text = 'Generating commit message with AI...';
+      const data = await aiUtils.generateMessage(diff, {
+        model: options.model || config.get('model'),
+        style: options.style || config.get('style'),
+        scope: options.scope || undefined,
+        verbose: options.verbose,
+      });
+      gs.stop();
 
-      // ─── Push prompt ──────────────────────────────────────────────────
-      const branch = await gitUtils.getCurrentBranch();
-      const pushAction = await uiUtils.promptPush(branch, options);
-      if (pushAction === 'push') {
-        const pushSpinner = ora('Pushing...').start();
-        await gitUtils.push();
-        pushSpinner.succeed('Pushed to origin/' + branch);
+      const formatted = uiUtils.formatCommitMessage(data, { noEmoji: options.emoji === false });
+
+      // ─── Output handling ──────────────────────────────────────────────
+      if (options.json) {
+        console.log(JSON.stringify({ commitMessage: formatted, data }, null, 2));
+        return;
       }
 
-      // ─── PR prompt ────────────────────────────────────────────────────
-      const remoteUrl = await gitUtils.getRemoteUrl();
-      const shouldPR = await uiUtils.promptCreatePR(remoteUrl, branch, options);
-      if (shouldPR) {
-        const { execSync } = await import('child_process');
-        execSync('gh pr create --web', { stdio: 'inherit' });
+      uiUtils.printCommitPreview(formatted, data);
+
+      if (options.copy) {
+        await clipboard.write(formatted);
+        console.log(chalk.green('  ✓ Copied to clipboard'));
+      }
+
+      if (options.dryRun) {
+        console.log(chalk.gray('  (dry-run — not committed)'));
+        return;
+      }
+
+      // ─── Action loop: confirm/edit/regenerate/change/abort ───────────
+      let finalMessage = formatted;
+      let action = options.yes ? 'confirm' : '';
+
+      while (action !== 'confirm' && action !== 'abort') {
+        if (!action) action = await uiUtils.promptCommitAction(finalMessage, stagedCount, diffStats, options);
+        if (action === 'edit') {
+          finalMessage = await uiUtils.promptEditMessage(finalMessage);
+          action = 'confirm';
+        } else if (action === 'regenerate') {
+          const rs = ora('Regenerating message...').start();
+          try {
+            const diff2 = await gitUtils.getStagedDiff();
+            const data2 = await aiUtils.generateMessage(diff2, {
+              model: options.model || config.get('model'),
+              style: options.style || config.get('style'),
+              scope: options.scope || undefined,
+              verbose: options.verbose,
+            });
+            finalMessage = uiUtils.formatCommitMessage(data2, { noEmoji: options.emoji === false });
+            rs.stop();
+            uiUtils.printCommitPreview(finalMessage, data2);
+          } catch (err) {
+            rs.fail(err.message);
+          }
+          action = '';
+        } else if (action === 'change') {
+          // Restore original staged files before re-selection
+          await gitUtils.unstageAll();
+          if (originalStaged.length > 0) await gitUtils.stageFiles(originalStaged);
+          selectedFiles = null;
+          break;
+        } else if (action === 'abort') {
+          // Restore what was staged before we touched it
+          await gitUtils.unstageAll();
+          if (originalStaged.length > 0) await gitUtils.stageFiles(originalStaged);
+          console.log(chalk.yellow('Commit aborted.'));
+          process.exit(0);
+        }
+      }
+
+      if (!selectedFiles) continue; // 'change' was picked, re-enter file selection
+
+      // ─── Commit ───────────────────────────────────────────────────────
+      const cs = ora('Committing...').start();
+      try {
+        const output = await gitUtils.commit(finalMessage);
+        cs.succeed('Committed');
+        if (options.verbose) console.log(chalk.gray(output));
+
+        const branch = await gitUtils.getCurrentBranch();
+        const pushAction = await uiUtils.promptPush(branch, options);
+        if (pushAction === 'push') {
+          const ps = ora('Pushing...').start();
+          await gitUtils.push();
+          ps.succeed('Pushed to origin/' + branch);
+        }
+
+        const remoteUrl = await gitUtils.getRemoteUrl();
+        const shouldPR = await uiUtils.promptCreatePR(remoteUrl, branch, options);
+        if (shouldPR) {
+          const { execSync } = await import('child_process');
+          execSync('gh pr create --web', { stdio: 'inherit' });
+        }
+
+        return; // all done
+      } catch (err) {
+        cs.fail('Commit failed: ' + err.message);
+        process.exit(1);
       }
     } catch (err) {
-      commitSpinner.fail('Commit failed: ' + err.message);
+      gs.fail(err.message);
       process.exit(1);
     }
-  } catch (err) {
-    spinner.fail(err.message);
-    process.exit(1);
   }
 });
 
